@@ -24,7 +24,9 @@ chmod +x PassagePin-1.0.0-x86_64.AppImage
 When invoking the skill, provide the agent with your question and a directory of relevant PDFs. For example:
 
 ```text
-/passagepin-rag What does Perry Mehrling say about the role of market makers? Search ~/Documents/mehrling-books.
+/passagepin-rag
+What does Perry Mehrling say about the role of market makers?
+Search ~/Documents/mehrling-books.
 ```
 
 Keep the extracted executable accessible to the agent. The model and runtime are bundled; the executable needs a writable user cache on first use.
