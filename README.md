@@ -26,7 +26,7 @@ When invoking the skill, provide the agent with your question and a directory of
 ```text
 /passagepin-rag
 What does Perry Mehrling say about the role of market makers?
-Search ~/Documents/mehrling-books.
+Search ~/Documents/mehrling-books
 ```
 
 Keep the extracted executable accessible to the agent. The model and runtime are bundled; the executable needs a writable user cache on first use.
