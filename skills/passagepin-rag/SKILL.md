@@ -31,22 +31,67 @@ script or changes to PassagePin's index format.
      Organize cached indexes by a SHA-256 hash of the canonical directory path
      and by recursive or non-recursive scope, so future requests can find them.
 
-Open candidate indexes with the worker to verify compatibility. Respect an
-existing index's recorded scope and the user's requested scope.
+Open candidate indexes with the worker to verify their directory and model
+compatibility. Read the index's `non_recursive` field to determine its scope:
+`true` means non-recursive; `false` or an absent field defaults to recursive.
+Older indexes may lack this field even if originally non-recursive. If the user
+identifies such an index as originally non-recursive, preserve that scope.
 
-If there is no usable index, tell the user that indexing is starting and create
-a **new index at a fresh path** in the skill's cache. Include subdirectories by
-default unless the user requests otherwise. Do not update, rebuild, overwrite,
-or change an existing index or the desktop library registry.
+Respect the user's requested scope. If it differs from an existing index's
+scope, use or create an index for the requested scope in the skill's cache
+instead of changing the existing index's scope. If no usable index exists,
+create one at a fresh cache path. Include subdirectories by default for a new
+index unless the user requests otherwise. A saved index outside the desktop
+registry or skill cache must be provided by the user.
 
-For recursive indexing, open the new path with the worker and send `index` with
-`rebuild: false`. The worker's `index` operation is always recursive. For a
-non-recursive library, use the CLI's `index --recursive=false` command with the
-new index path, then open that index in the worker.
+For an older index whose missing scope field the user identifies as originally
+non-recursive, first run a non-recursive update to record its scope. `check-index`
+otherwise assumes that index is recursive and could check the wrong files.
 
-If an index cannot be used, report the problem rather than claiming it was
-searched. A saved index outside the desktop registry or skill cache must be
-provided by the user.
+For other compatible existing indexes, before reading or searching, run
+`pdfsearch check-index --index INDEX_PATH` using the executable found above.
+The read-only check compares PDF file hashes and, for changed files, compares
+extracted page-text hashes. Parse its JSON result. If the command fails or its
+output cannot be interpreted, report the problem and do not search an unverified
+index. Discard check results if the library or index changes before they are used.
+
+Choose the next step from the check result:
+
+- If `changed_pages`, `added_files`, or `removed_files` is greater than zero, or
+  `errors` is nonempty, run an incremental index update. The update also handles
+  any `refresh` entries, so do not send a separate refresh first.
+- If those counts are zero and `errors` is empty but `refresh` is nonempty, the
+  file hashes changed while their extracted page text stayed the same. Send the
+  exact `refresh` entries to the open worker's `refresh` method as
+  `params.files`, in batches of at most 512 KiB of JSON-encoded entries. Wait
+  for each result. This saves the new file hashes without reindexing pages or
+  changing the last indexing timestamp. Report a refresh failure and do not
+  silently search a stale index.
+- If there are no changes, errors, or refresh entries, search the existing index
+  without updating or saving it.
+
+A new index needs an initial indexing operation. Report any existing or new
+`partial` and `skipped` index issues as limitations. As in the desktop check,
+those issues alone do not trigger an update when the files are unchanged.
+
+When creating or updating an index, tell the user that indexing is starting.
+Wait for the incremental operation to succeed before searching; never silently
+use a stale index after an update fails. Do not rebuild an existing index,
+change the desktop library registry, or run concurrent index or metadata-refresh
+writers on the same path. If the desktop app has a changed library open, tell
+the user to reopen it so the app loads the updated index instead of its older
+in-memory snapshot.
+
+- For a recursive library, open the selected index in the worker and send `index`
+  with `rebuild: false`. The worker's `index` operation is always recursive.
+- For a non-recursive library, shut down the worker if it has the index open,
+  then run `pdfsearch index --dir DIRECTORY --index INDEX_PATH --recursive=false`
+  with the selected canonical directory and index path, using the executable
+  found above. Start or reopen the worker on that same index after the command
+  succeeds, so it loads the updated snapshot.
+
+If an index cannot be opened or updated, report the problem rather than claiming
+it was searched. Do not rebuild or overwrite an incompatible index.
 
 ## Use the worker
 
@@ -60,7 +105,8 @@ operation. Indexing can emit progress events before its terminal response.
 Diagnostics appear on stderr.
 
 The following are request examples; send them one at a time, substituting the
-actual values:
+actual values. Send the `index` request only when indexing is needed for a
+recursive library, as described above:
 
 ```json
 {"id":"open","method":"open","params":{"directory":"/path/to/pdfs","index_path":"/path/to/index.json"}}
